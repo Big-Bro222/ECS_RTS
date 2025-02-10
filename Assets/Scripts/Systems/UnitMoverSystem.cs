@@ -1,6 +1,7 @@
 using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Physics;
 using Unity.Transforms;
 
 partial struct UnitMoverSystem : ISystem
@@ -8,16 +9,34 @@ partial struct UnitMoverSystem : ISystem
     [BurstCompile]
     public void OnUpdate(ref SystemState state)
     {
-        foreach ((RefRW<LocalTransform> localTransform, RefRO<MoveSpeed> moveSpeed) in SystemAPI
-                     .Query<RefRW<LocalTransform>, RefRO<MoveSpeed>>())
+        UnitMoverJob unitMoverJob = new UnitMoverJob()
         {
-            //The Ref is for unmanaged data structs and use RW and RO to specify if it's a readonly parameter or not. This will be useful when it comes to Multi-Thread since people can read on multi-Thread but only write on the main thread
+            deltaTime = SystemAPI.Time.DeltaTime
+        };
+        unitMoverJob.ScheduleParallel();
+    }
+}
+[BurstCompile]
+public partial struct UnitMoverJob : IJobEntity
+{
+    public float deltaTime;
+    public void Execute( ref LocalTransform localTransform, in UnitMover unitMover, ref PhysicsVelocity physicsVelocity)
+    {
+        float3 targetPos = unitMover.targetPosition;
+        float3 moveDir = targetPos - localTransform.Position;
+        float reachedTargetDistanceSq = 2f;
+        if (math.lengthsq(moveDir) < reachedTargetDistanceSq)
+        {
+            //reached the target position
+            physicsVelocity.Linear = float3.zero;
+            physicsVelocity.Angular = float3.zero;
+        };
+        moveDir = math.normalize(moveDir);
 
-            float3 targetPos = localTransform.ValueRO.Position + math.right() * 10;
-            float3 moveDir = targetPos - localTransform.ValueRO.Position;
-            moveDir = math.normalize(moveDir);
-            localTransform.ValueRW.Position += moveDir * SystemAPI.Time.DeltaTime * moveSpeed.ValueRO.value;
-            localTransform.ValueRW.Rotation = quaternion.LookRotation(moveDir, math.up());
-        }
+        localTransform.Rotation = math.slerp(localTransform.Rotation,
+            quaternion.LookRotation(moveDir, math.up()),
+            deltaTime * unitMover.rotationSpeed);
+        physicsVelocity.Linear = moveDir * unitMover.moveSpeed;
+        physicsVelocity.Angular = float3.zero;
     }
 }
