@@ -1,6 +1,7 @@
 using System;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.Physics;
 using Unity.Transforms;
 using UnityEngine;
@@ -97,10 +98,13 @@ public class UnitSelectionManager : SingletonBase<UnitSelectionManager>
             EntityManager em = World.DefaultGameObjectInjectionWorld.EntityManager;
             EntityQuery entityQuery = new EntityQueryBuilder(Allocator.Temp).WithAll<UnitMover, Selected>().Build(em);
             NativeArray<UnitMover> unitMoverArray = entityQuery.ToComponentDataArray<UnitMover>(Allocator.Temp);
+            NativeArray<float3> movePositionArray =
+                GenerateMovePositionArray(mouseWorldPosition, unitMoverArray.Length);
+            
             for (int i = 0; i < unitMoverArray.Length; i++)
             {
                 UnitMover unitMover = unitMoverArray[i];
-                unitMover.targetPosition = mouseWorldPosition;
+                unitMover.targetPosition = movePositionArray[i];
                 unitMoverArray[i] = unitMover;
             }
 
@@ -121,5 +125,43 @@ public class UnitSelectionManager : SingletonBase<UnitSelectionManager>
             upperRightCorner.x - lowerLeftCorner.x,
             upperRightCorner.y - lowerLeftCorner.y
         );
+    }
+
+    private NativeArray<float3> GenerateMovePositionArray(float3 targetPos, int unitCount)
+    {
+        NativeArray<float3> positionArray = new NativeArray<float3>(unitCount, Allocator.Temp);
+        if (unitCount == 0)
+        {
+            return positionArray;
+        }
+
+        positionArray[0] = targetPos;
+        if (unitCount == 1)
+        {
+            return positionArray;
+        }
+        float ringSize = 2.2f;
+        int ringIndex = 0;
+        int positionIndex = 1;
+        while (positionIndex<unitCount)
+        {
+            //assignable position of the ring should be different and the outer the ring is, the more unit it can contain
+            int ringPositionCount = 3 + ringIndex * 2;
+            for (int i = 0; i < ringPositionCount; i++)
+            {
+                float angle = i * (math.PI2 / ringPositionCount);
+                float3 ringVector =
+                    math.rotate(quaternion.RotateY(angle), new float3(ringSize * (ringIndex + 1), 0, 0));
+                float3 ringPosition = targetPos + ringVector;
+                positionArray[positionIndex] = ringPosition;
+                positionIndex++;
+                if (positionIndex >= unitCount)
+                {
+                    break;
+                }
+            }
+            ringIndex++;
+        }
+        return positionArray;
     }
 }
